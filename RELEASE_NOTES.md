@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix: remove blank pages at the end of chapters whose text reflows narrower after loading, such as when an embedded font finishes loading
 - fix: land on the last page of the previous chapter when paging back, even while the chapter is still reflowing
 - fix: show the last page of each chapter on devices with fractional pixel ratios
 - fix(deps): update DOMPurify to clear the release audit

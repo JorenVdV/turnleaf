@@ -180,6 +180,27 @@ export class SnappedPageViewManager extends DefaultViewManager {
   }
 }
 
+/**
+ * Re-measures a section once text that reflowed after epub.js sized it has settled.
+ * epub.js only re-measures when the section's root element resizes, but in paginated flow
+ * that element is pinned to the iframe width, so text that reflows narrower later (sanitised
+ * stylesheets, fonts that finish loading) left blank pages at the end of the chapter.
+ */
+export function remeasureAfterLateReflow(contents: Contents): void {
+  const document = contents.document;
+  const remeasure = () => {
+    // The section may have been unloaded while its fonts were loading.
+    if (!document.defaultView) return;
+    (contents as unknown as { resizeCheck(): void }).resizeCheck();
+  };
+  // Measuring forces layout, which starts loading the fonts the section uses.
+  remeasure();
+  const fonts = document.fonts as FontFaceSet | undefined;
+  if (!fonts) return;
+  void fonts.ready.then(remeasure);
+  fonts.addEventListener('loadingdone', remeasure);
+}
+
 interface SpineSection {
   href: string;
   index: number;
@@ -455,7 +476,10 @@ export class ReaderSession {
       spread: 'none',
       allowScriptedContent: false,
     });
-    this.rendition.hooks.content.register((contents: Contents) => this.harden(contents));
+    this.rendition.hooks.content.register(async (contents: Contents) => {
+      await this.harden(contents);
+      remeasureAfterLateReflow(contents);
+    });
     if (onSelection) {
       this.rendition.hooks.content.register((contents: Contents) => {
         const handler = () => {
