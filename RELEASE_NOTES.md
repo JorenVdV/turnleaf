@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix: land on the last page of the previous chapter when paging back, even while the chapter is still reflowing
 - fix: show the last page of each chapter on devices with fractional pixel ratios
 - fix(deps): update DOMPurify to clear the release audit
 - fix: tolerate incomplete Kavita metadata while preserving saved books and per-book progress, and provide field-level diagnostics that can be copied or exported from Settings (#134).

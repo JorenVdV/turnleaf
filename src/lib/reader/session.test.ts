@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   kavitaXPathToCfi,
+  lastPageOffset,
   pageTurnOffset,
   parseKavitaXPath,
   resolveContentXPath,
+  SnappedPageViewManager,
   toKavitaXPath,
 } from './session';
 
@@ -73,5 +75,97 @@ describe('paginated page turns', () => {
   it('treats a single-page section as both first and last page', () => {
     expect(pageTurnOffset(0, 572, 572, 1)).toBeNull();
     expect(pageTurnOffset(0, 572, 572, -1)).toBeNull();
+  });
+
+  it('finds the last whole page of a section', () => {
+    expect(lastPageOffset(6292, 572)).toBe(5720);
+    expect(lastPageOffset(6292.4, 572)).toBe(5720);
+    expect(lastPageOffset(572, 572)).toBe(0);
+    expect(lastPageOffset(0, 572)).toBe(0);
+  });
+});
+
+describe('paging back into the previous section', () => {
+  const pageWidth = 572;
+
+  // Scrolls like a WebView with devicePixelRatio 1.875: clientWidth is fractional and
+  // scrollLeft is clamped as soon as the content shrinks.
+  class FakeContainer {
+    scrollTop = 0;
+    private left = 0;
+    private width: number;
+
+    constructor(width: number) {
+      this.width = width;
+    }
+
+    get scrollWidth() {
+      return this.width;
+    }
+
+    get scrollLeft() {
+      return this.left;
+    }
+
+    set scrollLeft(value: number) {
+      this.left = Math.max(0, Math.min(value, this.width - 571.47));
+    }
+
+    resize(width: number) {
+      this.width = width;
+      this.scrollLeft = this.left;
+    }
+  }
+
+  // The previous section first measures as `firstWidth` while epub.js prepends it.
+  function readerAtSectionStart(firstWidth: number) {
+    const container = new FakeContainer(9 * pageWidth);
+    const manager = new SnappedPageViewManager({ settings: { axis: 'horizontal' } });
+    // epub.js re-measures the view and calls counter() on every resize of a prepended section.
+    const reflow = (width: number) => {
+      const widthDelta = width - container.scrollWidth;
+      container.resize(width);
+      manager.counter({ widthDelta, heightDelta: 0 });
+    };
+    Object.assign(manager, {
+      isPaginated: true,
+      container,
+      layout: { name: 'reflowable', delta: pageWidth, divisor: 1 },
+      views: {
+        length: 1,
+        first: () => ({ section: { prev: () => ({ prev: () => undefined }) } }),
+        show: () => undefined,
+      },
+      clear: () => {
+        container.scrollLeft = 0;
+        container.resize(0);
+      },
+      updateLayout: () => undefined,
+      prepend: () => {
+        reflow(firstWidth);
+        return Promise.resolve();
+      },
+    });
+    return { container, manager, reflow };
+  }
+
+  // Measured on a Bigme B6: the section grows from 5 to 11 pages, then a late font shrinks it to 9.
+  it('stays on the last page while the previous section reflows', async () => {
+    const { container, manager, reflow } = readerAtSectionStart(5 * pageWidth);
+    await manager.prev();
+    expect(container.scrollLeft).toBe(4 * pageWidth);
+    reflow(11 * pageWidth);
+    expect(container.scrollLeft).toBe(10 * pageWidth);
+    reflow(9 * pageWidth);
+    expect(container.scrollLeft).toBe(8 * pageWidth);
+  });
+
+  it('stops following reflows once the reader turns a page', async () => {
+    const { container, manager, reflow } = readerAtSectionStart(9 * pageWidth);
+    await manager.prev();
+    await manager.prev();
+    expect(container.scrollLeft).toBe(7 * pageWidth);
+    reflow(11 * pageWidth);
+    expect(container.scrollLeft).toBe(9 * pageWidth);
   });
 });
