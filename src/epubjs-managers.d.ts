@@ -9,6 +9,8 @@ declare module 'epubjs/src/managers/default' {
     layout: { delta: number };
     next(): Promise<unknown> | undefined;
     prev(): Promise<unknown> | undefined;
+    display(section: unknown, target?: unknown): Promise<unknown>;
+    counter(bounds: { widthDelta: number; heightDelta: number }): void;
     scrollTo(x: number, y: number, silent?: boolean): void;
   }
 }

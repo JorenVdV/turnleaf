@@ -115,20 +115,55 @@ export function pageTurnOffset(
   return page >= 0 && page < pageCount ? page * pageWidth : null;
 }
 
+/** Returns the scroll offset of the last whole page in a section. */
+export function lastPageOffset(scrollWidth: number, pageWidth: number): number {
+  if (pageWidth <= 0) return 0;
+  return Math.max(0, Math.round(scrollWidth / pageWidth) - 1) * pageWidth;
+}
+
 // epub.js turns pages with `scrollLeft += width` and an exact `<=` end check, which skips
 // the last page of every section and drifts sideways when scrollLeft is rounded.
-class SnappedPageViewManager extends DefaultViewManager {
+export class SnappedPageViewManager extends DefaultViewManager {
+  // Set after paging back into the previous section, until the reader navigates again.
+  private pinnedToLastPage = false;
+
   next() {
+    this.pinnedToLastPage = false;
     return this.turnPage(1) ?? super.next();
   }
 
   prev() {
-    return this.turnPage(-1) ?? super.prev();
+    this.pinnedToLastPage = false;
+    const turned = this.turnPage(-1);
+    if (turned) return turned;
+    this.pinnedToLastPage = this.snapsPages();
+    const leaving = super.prev();
+    if (!leaving) this.pinnedToLastPage = false;
+    return leaving;
+  }
+
+  display(section: unknown, target?: unknown) {
+    this.pinnedToLastPage = false;
+    return super.display(section, target);
+  }
+
+  // epub.js keeps a prepended section in place with `scrollBy(widthDelta)` on every resize.
+  // The section keeps reflowing after epub.js scrolls to its end (styles, fonts), and when it
+  // shrinks the browser has already clamped scrollLeft, so the delta is subtracted twice and
+  // the reader lands mid-chapter. Snap to the last page instead while pinned there.
+  counter(bounds: { widthDelta: number; heightDelta: number }) {
+    if (!this.pinnedToLastPage) return super.counter(bounds);
+    this.scrollTo(lastPageOffset(this.container.scrollWidth, this.layout.delta), 0, true);
+  }
+
+  private snapsPages(): boolean {
+    return (
+      this.isPaginated && this.settings.axis === 'horizontal' && this.settings.direction !== 'rtl'
+    );
   }
 
   private turnPage(step: 1 | -1): Promise<void> | null {
-    if (!this.isPaginated || this.settings.axis !== 'horizontal') return null;
-    if (this.settings.direction === 'rtl' || !this.views.length) return null;
+    if (!this.snapsPages() || !this.views.length) return null;
     const offset = pageTurnOffset(
       this.container.scrollLeft,
       this.container.scrollWidth,
