@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { kavitaXPathToCfi, parseKavitaXPath, resolveContentXPath, toKavitaXPath } from './session';
+import {
+  kavitaXPathToCfi,
+  pageTurnOffset,
+  parseKavitaXPath,
+  resolveContentXPath,
+  toKavitaXPath,
+} from './session';
 
 describe('Kavita EPUB locations', () => {
   it('adds the one-based Kavita spine fragment to an EPUB content path', () => {
@@ -46,5 +52,26 @@ describe('Kavita EPUB locations', () => {
     expect(kavitaXPathToCfi('//body/DocFragment[9]/body/section[1]/p[165]/span[1]', '/6/18')).toBe(
       'epubcfi(/6/18!/4/2/330/2,/1:0,/1:1)',
     );
+  });
+});
+
+describe('paginated page turns', () => {
+  // Measured on a Bigme B6 (devicePixelRatio 1.875): scrollLeft drifts past whole pages.
+  it('reaches the last page when scrollLeft is rounded past the page boundary', () => {
+    expect(pageTurnOffset(3433.6, 4576, 572, 1)).toBe(4004);
+  });
+
+  it('leaves the section only from the last page', () => {
+    expect(pageTurnOffset(4004.2, 4576, 572, 1)).toBeNull();
+  });
+
+  it('snaps backwards to whole pages and stops at the first page', () => {
+    expect(pageTurnOffset(1144.4, 4576, 572, -1)).toBe(572);
+    expect(pageTurnOffset(0.27, 4576, 572, -1)).toBeNull();
+  });
+
+  it('treats a single-page section as both first and last page', () => {
+    expect(pageTurnOffset(0, 572, 572, 1)).toBeNull();
+    expect(pageTurnOffset(0, 572, 572, -1)).toBeNull();
   });
 });
