@@ -1,4 +1,5 @@
 import ePub, { type Contents, type Location, type Rendition } from 'epubjs';
+import DefaultViewManager from 'epubjs/src/managers/default';
 import type { Appearance } from './appearance';
 import {
   clipReaderSearchExcerpt,
@@ -95,6 +96,53 @@ export function kavitaXPathToCfi(xpath: string, cfiBase: string): string | null 
   }
   const elementPath = `/4${steps.map((step) => `/${step}`).join('')}`;
   return `epubcfi(${cfiBase}!${elementPath},/1:0,/1:1)`;
+}
+
+/**
+ * Returns the scroll offset of the neighbouring page, or null at a section edge.
+ * WebViews with a fractional devicePixelRatio round scrollLeft to device pixels, so
+ * pages are snapped to whole multiples of the page width instead of compared exactly.
+ */
+export function pageTurnOffset(
+  scrollLeft: number,
+  scrollWidth: number,
+  pageWidth: number,
+  step: 1 | -1,
+): number | null {
+  if (pageWidth <= 0) return null;
+  const pageCount = Math.round(scrollWidth / pageWidth);
+  const page = Math.round(scrollLeft / pageWidth) + step;
+  return page >= 0 && page < pageCount ? page * pageWidth : null;
+}
+
+// epub.js turns pages with `scrollLeft += width` and an exact `<=` end check, which skips
+// the last page of every section and drifts sideways when scrollLeft is rounded.
+class SnappedPageViewManager extends DefaultViewManager {
+  next() {
+    return this.turnPage(1) ?? super.next();
+  }
+
+  prev() {
+    return this.turnPage(-1) ?? super.prev();
+  }
+
+  private turnPage(step: 1 | -1): Promise<void> | null {
+    if (!this.isPaginated || this.settings.axis !== 'horizontal') return null;
+    if (this.settings.direction === 'rtl' || !this.views.length) return null;
+    const offset = pageTurnOffset(
+      this.container.scrollLeft,
+      this.container.scrollWidth,
+      this.layout.delta,
+      step,
+    );
+    if (offset === null) {
+      // epub.js only leaves for the previous section when scrollLeft is exactly 0.
+      if (step < 0) this.scrollTo(0, 0, true);
+      return null;
+    }
+    this.scrollTo(offset, 0, true);
+    return Promise.resolve();
+  }
 }
 
 interface SpineSection {
@@ -367,7 +415,7 @@ export class ReaderSession {
     this.rendition = this.book.renderTo(target, {
       width: '100%',
       height: '100%',
-      manager: 'default',
+      manager: SnappedPageViewManager,
       flow: 'paginated',
       spread: 'none',
       allowScriptedContent: false,
