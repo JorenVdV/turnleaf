@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import type { Contents } from 'epubjs';
+import { describe, expect, it, vi } from 'vitest';
 import {
   kavitaXPathToCfi,
   lastPageOffset,
   pageTurnOffset,
   parseKavitaXPath,
+  remeasureAfterLateReflow,
   resolveContentXPath,
   SnappedPageViewManager,
   toKavitaXPath,
@@ -82,6 +84,54 @@ describe('paginated page turns', () => {
     expect(lastPageOffset(6292.4, 572)).toBe(5720);
     expect(lastPageOffset(572, 572)).toBe(0);
     expect(lastPageOffset(0, 572)).toBe(0);
+  });
+});
+
+// A section's iframe contents whose fonts load after epub.js first measured it.
+function contentsWithLoadingFonts(resizeCheck: () => void) {
+  let fontsReady = () => {};
+  const fonts = Object.assign(new EventTarget(), {
+    ready: new Promise<void>((resolve) => (fontsReady = resolve)),
+  });
+  const document = { defaultView: {} as Window | null, fonts };
+  const contents = { document, resizeCheck } as unknown as Contents;
+  return { contents, document, fonts, fontsReady };
+}
+
+describe('re-measuring sections after late reflows', () => {
+  it('re-measures once the section is hardened and again when its fonts are ready', async () => {
+    const resizeCheck = vi.fn();
+    const { contents, fontsReady } = contentsWithLoadingFonts(resizeCheck);
+    remeasureAfterLateReflow(contents);
+    expect(resizeCheck).toHaveBeenCalledTimes(1);
+    fontsReady();
+    await Promise.resolve();
+    expect(resizeCheck).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-measures whenever more fonts finish loading', () => {
+    const resizeCheck = vi.fn();
+    const { contents, fonts } = contentsWithLoadingFonts(resizeCheck);
+    remeasureAfterLateReflow(contents);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(resizeCheck).toHaveBeenCalledTimes(3);
+  });
+
+  it('leaves unloaded sections alone', () => {
+    const resizeCheck = vi.fn();
+    const { contents, document, fonts } = contentsWithLoadingFonts(resizeCheck);
+    remeasureAfterLateReflow(contents);
+    document.defaultView = null;
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(resizeCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('works where the document has no font loading API', () => {
+    const resizeCheck = vi.fn();
+    const contents = { document: { defaultView: {} }, resizeCheck } as unknown as Contents;
+    remeasureAfterLateReflow(contents);
+    expect(resizeCheck).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -167,5 +217,18 @@ describe('paging back into the previous section', () => {
     expect(container.scrollLeft).toBe(7 * pageWidth);
     reflow(11 * pageWidth);
     expect(container.scrollLeft).toBe(9 * pageWidth);
+  });
+
+  // Measured on a Bigme B6: c2 stayed 11 pages wide after its embedded font narrowed it to 9.
+  it('stays on the last page when a font that loads late shrinks the previous section', async () => {
+    const { container, manager, reflow } = readerAtSectionStart(11 * pageWidth);
+    const { contents, fonts } = contentsWithLoadingFonts(() => {
+      if (container.scrollWidth !== 9 * pageWidth) reflow(9 * pageWidth);
+    });
+    await manager.prev();
+    expect(container.scrollLeft).toBe(10 * pageWidth);
+    remeasureAfterLateReflow(contents);
+    fonts.dispatchEvent(new Event('loadingdone'));
+    expect(container.scrollLeft).toBe(8 * pageWidth);
   });
 });
