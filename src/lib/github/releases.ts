@@ -21,6 +21,10 @@ export type ReleaseBanner = {
   title: string | null;
 };
 
+// Each release carries one APK per build variant; android-release.yml uploads them under these names.
+export const RELEASE_APK_ASSET = 'app-release.apk';
+export const LEGACY_WEBVIEW_APK_ASSET = 'app-release-legacy-webview.apk';
+
 const githubReleasesUrl = 'https://api.github.com/repos/sgerner/turnleaf/releases/latest';
 const githubRepositoryPath = '/sgerner/turnleaf';
 
@@ -115,7 +119,11 @@ function isSafeAssetName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*\.apk$/i.test(name);
 }
 
-function pickDownloadUrl(release: GithubRelease, tagName: string): string | null {
+function pickDownloadUrl(
+  release: GithubRelease,
+  tagName: string,
+  apkAssetName: string,
+): string | null {
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const apkAsset = assets.find((asset) => {
     if (
@@ -126,7 +134,7 @@ function pickDownloadUrl(release: GithubRelease, tagName: string): string | null
     ) {
       return false;
     }
-    if (!isSafeAssetName(asset.name)) return false;
+    if (!isSafeAssetName(asset.name) || asset.name !== apkAssetName) return false;
 
     return isTrustedGithubUrl(
       asset.browser_download_url,
@@ -136,7 +144,11 @@ function pickDownloadUrl(release: GithubRelease, tagName: string): string | null
   return apkAsset?.browser_download_url ?? null;
 }
 
-function buildBanner(release: GithubRelease, currentVersion: string): ReleaseBanner | null {
+function buildBanner(
+  release: GithubRelease,
+  currentVersion: string,
+  apkAssetName: string,
+): ReleaseBanner | null {
   if (typeof release.tag_name !== 'string' || typeof release.html_url !== 'string') return null;
 
   const tagName = release.tag_name.trim();
@@ -150,7 +162,7 @@ function buildBanner(release: GithubRelease, currentVersion: string): ReleaseBan
   return {
     version: latestVersion,
     releaseUrl: release.html_url,
-    downloadUrl: pickDownloadUrl(release, tagName),
+    downloadUrl: pickDownloadUrl(release, tagName, apkAssetName),
     publishedAt: release.published_at,
     title: release.name,
   };
@@ -158,6 +170,7 @@ function buildBanner(release: GithubRelease, currentVersion: string): ReleaseBan
 
 export async function fetchLatestGithubRelease(
   currentVersion: string,
+  apkAssetName = RELEASE_APK_ASSET,
   timeoutMs = 4500,
 ): Promise<ReleaseBanner | null> {
   const controller = new AbortController();
@@ -172,7 +185,7 @@ export async function fetchLatestGithubRelease(
     });
     if (!response.ok) return null;
     const release = (await response.json()) as GithubRelease;
-    return buildBanner(release, currentVersion);
+    return buildBanner(release, currentVersion, apkAssetName);
   } catch {
     return null;
   } finally {

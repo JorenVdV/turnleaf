@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compareVersions, fetchLatestGithubRelease } from './releases';
+import {
+  compareVersions,
+  fetchLatestGithubRelease,
+  LEGACY_WEBVIEW_APK_ASSET,
+  RELEASE_APK_ASSET,
+} from './releases';
 
 const trustedAsset = {
   name: 'app-release.apk',
@@ -108,6 +113,40 @@ describe('fetchLatestGithubRelease', () => {
     await expect(fetchLatestGithubRelease('0.3.2')).resolves.toMatchObject({
       releaseUrl: trustedRelease.html_url,
       downloadUrl: null,
+    });
+  });
+
+  describe('with one APK per build variant', () => {
+    const legacyAsset = {
+      name: LEGACY_WEBVIEW_APK_ASSET,
+      browser_download_url: `https://github.com/sgerner/turnleaf/releases/download/v0.3.3%2B4/${LEGACY_WEBVIEW_APK_ASSET}`,
+    };
+
+    it.each([
+      ['legacy first', [legacyAsset, trustedAsset]],
+      ['normal first', [trustedAsset, legacyAsset]],
+    ])('offers a normal install only the normal APK (%s)', async (_order, assets) => {
+      mockRelease({ ...trustedRelease, assets });
+
+      await expect(fetchLatestGithubRelease('0.3.2', RELEASE_APK_ASSET)).resolves.toMatchObject({
+        downloadUrl: trustedAsset.browser_download_url,
+      });
+    });
+
+    it('offers a legacy WebView install only the legacy APK', async () => {
+      mockRelease({ ...trustedRelease, assets: [trustedAsset, legacyAsset] });
+
+      await expect(
+        fetchLatestGithubRelease('0.3.2', LEGACY_WEBVIEW_APK_ASSET),
+      ).resolves.toMatchObject({ downloadUrl: legacyAsset.browser_download_url });
+    });
+
+    it('links a legacy install to the release page when only the normal APK was published', async () => {
+      mockRelease(trustedRelease);
+
+      await expect(
+        fetchLatestGithubRelease('0.3.2', LEGACY_WEBVIEW_APK_ASSET),
+      ).resolves.toMatchObject({ releaseUrl: trustedRelease.html_url, downloadUrl: null });
     });
   });
 });

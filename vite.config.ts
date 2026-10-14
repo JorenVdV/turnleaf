@@ -74,6 +74,7 @@ export default defineConfig({
   plugins: [tailwindcss(), svelte(), kavitaDevProxy(), legacyWebview && legacyWebviewCss()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __LEGACY_WEBVIEW__: JSON.stringify(legacyWebview),
   },
   build: {
     target: legacyWebview ? LEGACY_WEBVIEW_TARGET : 'es2022',

@@ -64,3 +64,30 @@ adb shell monkey -p app.turnleaf.reader 1
 ```
 
 Plain HTTP is disabled by product policy until the user explicitly confirms it in onboarding. Android must permit cleartext at the manifest level because network-security XML cannot be changed per server at runtime; HTTPS remains recommended.
+
+## Legacy WebView build
+
+Some devices ship an Android System WebView that cannot be updated. Onyx Boox devices on Android 9
+carry an Onyx-signed WebView 86, and Android rejects Google's WebView updates over it with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. The regular build renders unstyled there, so these devices
+need the legacy build:
+
+```bash
+TURNLEAF_LEGACY_WEBVIEW=1 npm run android:debug
+TURNLEAF_LEGACY_WEBVIEW=1 npm run android:release
+```
+
+It targets Chrome 86. `scripts/legacy-webview-css.ts` rewrites the built CSS: it flattens cascade
+layers, removes `:where()`/`:is()`, expands logical and `inset` shorthands, and adds
+`aspect-ratio` and `dvh` fallbacks. `src/lib/legacy-polyfills.ts` fills in the missing runtime APIs.
+Without the variable the build is unchanged.
+
+Every GitHub release carries both variants, built from the same revision with the same app id and
+signing key:
+
+| Asset                            | For                                           |
+| -------------------------------- | --------------------------------------------- |
+| `app-release.apk`                | Android 7 or newer with an up-to-date WebView |
+| `app-release-legacy-webview.apk` | WebViews stuck at Chrome 86 or older          |
+
+Either APK installs over the other. Each build's update banner offers only its own variant.

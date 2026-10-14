@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- feat: publish separate normal and legacy WebView APKs with each release
 - feat: make the e-ink theme pure black and white without shading
 - feat: add a legacy WebView build for devices stuck on Chrome 86
 - fix: keep reader tap zones transparent under injected WebView styles

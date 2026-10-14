@@ -104,6 +104,10 @@ const processor = postcss([
   }),
 ]);
 
+export async function transformLegacyWebviewCss(css: string, from?: string): Promise<string> {
+  return (await processor.process(css, { from })).css;
+}
+
 // Runs on the final CSS assets, after Tailwind and Vite's minifier, so it sees exactly what ships.
 export function legacyWebviewCss(): Plugin {
   return {
@@ -113,8 +117,7 @@ export function legacyWebviewCss(): Plugin {
     async generateBundle(_options, bundle) {
       for (const asset of Object.values(bundle)) {
         if (asset.type !== 'asset' || !asset.fileName.endsWith('.css')) continue;
-        const result = await processor.process(String(asset.source), { from: asset.fileName });
-        asset.source = result.css;
+        asset.source = await transformLegacyWebviewCss(String(asset.source), asset.fileName);
       }
     },
   };
