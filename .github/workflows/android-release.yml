@@ -125,7 +125,7 @@ jobs:
             echo "Legacy WebView APK still contains cascade layers" >&2
             exit 1
           fi
-          cp "$APK" release-payload/app-release-legacy-webview.apk
+          cp "$APK" release-payload/turnleaf-legacy-webview.apk
 
       - name: Stage release notes
         run: |
@@ -135,7 +135,7 @@ jobs:
             cat "$RUNNER_TEMP/turnleaf-release-notes.md"
             printf '\n\n## Downloads\n\n'
             printf -- '- `app-release.apk`: Android 7 or newer with an up-to-date Android System WebView.\n'
-            printf -- '- `app-release-legacy-webview.apk`: devices whose WebView cannot be updated past Chrome 86, such as Onyx Boox on Android 9.\n'
+            printf -- '- `turnleaf-legacy-webview.apk`: devices whose WebView cannot be updated past Chrome 86, such as Onyx Boox on Android 9.\n'
             printf '\nTested revision: `%s`\n' "$GITHUB_SHA"
           } > release-payload/turnleaf-release-notes.md
           printf '%s\n' "$GITHUB_SHA" > release-payload/tested-revision.txt
@@ -168,8 +168,15 @@ jobs:
           test "$(cat release-payload/tested-revision.txt)" = "$TESTED_REVISION"
           grep -Fq "Tested revision: \`$TESTED_REVISION\`" release-payload/turnleaf-release-notes.md
           test -s release-payload/app-release.apk
-          test -s release-payload/app-release-legacy-webview.apk
-          if cmp -s release-payload/app-release.apk release-payload/app-release-legacy-webview.apk; then
+          test -s release-payload/turnleaf-legacy-webview.apk
+          # GitHub lists assets alphabetically, and builds before the per-variant update check
+          # offer the first .apk: that has to stay the normal one.
+          FIRST_APK="$(cd release-payload && printf '%s\n' *.apk | LC_ALL=C sort | head -n 1)"
+          if [ "$FIRST_APK" != "app-release.apk" ]; then
+            echo "Release assets sort $FIRST_APK first; app-release.apk must come first" >&2
+            exit 1
+          fi
+          if cmp -s release-payload/app-release.apk release-payload/turnleaf-legacy-webview.apk; then
             echo "Release and legacy WebView APKs are identical" >&2
             exit 1
           fi
@@ -181,14 +188,10 @@ jobs:
           RELEASE_TAG: ${{ needs.build-release-apk.outputs.release_tag }}
           VERSION_BASE: ${{ needs.build-release-apk.outputs.version_base }}
           TESTED_REVISION: ${{ needs.build-release-apk.outputs.tested_revision }}
-        # The legacy APK goes up second: builds before the per-variant update check offer the
-        # first .apk asset they find, and must keep getting the normal one.
         run: |
-          set -eu
           gh release create "$RELEASE_TAG" "release-payload/app-release.apk" \
+            "release-payload/turnleaf-legacy-webview.apk" \
             --title "Turnleaf $VERSION_BASE" \
             --notes-file "release-payload/turnleaf-release-notes.md" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TESTED_REVISION"
-          gh release upload "$RELEASE_TAG" "release-payload/app-release-legacy-webview.apk" \
-            --repo "$GITHUB_REPOSITORY"

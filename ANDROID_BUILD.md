@@ -85,9 +85,9 @@ Without the variable the build is unchanged.
 Every GitHub release carries both variants, built from the same revision with the same app id and
 signing key:
 
-| Asset                            | For                                           |
-| -------------------------------- | --------------------------------------------- |
-| `app-release.apk`                | Android 7 or newer with an up-to-date WebView |
-| `app-release-legacy-webview.apk` | WebViews stuck at Chrome 86 or older          |
+| Asset                         | For                                           |
+| ----------------------------- | --------------------------------------------- |
+| `app-release.apk`             | Android 7 or newer with an up-to-date WebView |
+| `turnleaf-legacy-webview.apk` | WebViews stuck at Chrome 86 or older          |
 
 Either APK installs over the other. Each build's update banner offers only its own variant.
