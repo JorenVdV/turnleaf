@@ -22,11 +22,15 @@ export type ReleaseBanner = {
 };
 
 // Each release carries one APK per build variant; android-release.yml uploads them under these names.
+// GitHub lists release assets alphabetically and builds before the per-variant check offer the
+// first .apk, so the legacy name must sort after the release name.
 export const RELEASE_APK_ASSET = 'app-release.apk';
-export const LEGACY_WEBVIEW_APK_ASSET = 'app-release-legacy-webview.apk';
+export const LEGACY_WEBVIEW_APK_ASSET = 'turnleaf-legacy-webview.apk';
 
-const githubReleasesUrl = 'https://api.github.com/repos/sgerner/turnleaf/releases/latest';
-const githubRepositoryPath = '/sgerner/turnleaf';
+// The repository whose releases the update banner offers; android-release.yml publishes there.
+const githubRepository = 'JorenVdV/turnleaf';
+const githubReleasesUrl = `https://api.github.com/repos/${githubRepository}/releases/latest`;
+const githubRepositoryPath = `/${githubRepository}`;
 
 type ParsedVersion = {
   major: number;

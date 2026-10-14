@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix: keep a dismissed update banner hidden until a newer release
+- fix: publish the legacy APK under a name that sorts last and offer this repo's releases
 - feat: publish separate normal and legacy WebView APKs with each release
 - feat: make the e-ink theme pure black and white without shading
 - feat: add a legacy WebView build for devices stuck on Chrome 86

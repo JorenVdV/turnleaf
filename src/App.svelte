@@ -22,6 +22,8 @@
 
   const themePreferenceKey = 'uiTheme';
   const modePreferenceKey = 'uiMode';
+  // The banner stays hidden for a dismissed release until a newer one is published.
+  const dismissedReleasePreferenceKey = 'dismissedRelease';
   const defaultTheme = 'fennec';
   const defaultMode = 'dark';
 
@@ -81,7 +83,14 @@
       __APP_VERSION__,
       __LEGACY_WEBVIEW__ ? LEGACY_WEBVIEW_APK_ASSET : RELEASE_APK_ASSET,
     );
-    if (latest) releaseBanner = latest;
+    if (!latest) return;
+    const dismissed = await getPreference(dismissedReleasePreferenceKey).catch(() => null);
+    if (dismissed !== latest.version) releaseBanner = latest;
+  }
+
+  function dismissReleaseBanner(): void {
+    if (releaseBanner) void setPreference(dismissedReleasePreferenceKey, releaseBanner.version);
+    releaseBanner = null;
   }
 
   function displayVersion(version: string): string {
@@ -143,7 +152,7 @@
             <button
               class="btn btn-sm preset-tonal-error !text-sm"
               type="button"
-              onclick={() => (releaseBanner = null)}
+              onclick={dismissReleaseBanner}
             >
               Dismiss
             </button>

@@ -4,7 +4,7 @@ Turnleaf is an offline-first, mobile EPUB reader for Kavita. It is a local app o
 
 The goal is simple: connect to Kavita, download books, read them as paginated pages, and keep progress synchronized across devices without making reading feel like a web app.
 
-Latest release: [GitHub Releases](https://github.com/sgerner/turnleaf/releases/latest)
+Latest release: [GitHub Releases](https://github.com/JorenVdV/turnleaf/releases/latest)
 
 Tracked release notes: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
