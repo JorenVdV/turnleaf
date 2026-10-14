@@ -22,6 +22,7 @@ export default tseslint.config(
         ...globals.browser,
         ...globals.node,
         __APP_VERSION__: 'readonly',
+        __LEGACY_WEBVIEW__: 'readonly',
       },
     },
     rules: {

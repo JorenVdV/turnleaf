@@ -13,6 +13,7 @@ import {
   fetchProxyTarget,
   validateProxyTarget,
 } from './scripts/dev-proxy';
+import { LEGACY_WEBVIEW_TARGET, legacyWebviewCss } from './scripts/legacy-webview-css';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
@@ -20,6 +21,8 @@ const packageJson = JSON.parse(
   version: string;
 };
 const appVersion = process.env.TURNLEAF_VERSION_NAME ?? packageJson.version;
+// Builds for WebViews that cannot be updated (e.g. Onyx's Android 9 firmware, WebView 86).
+const legacyWebview = process.env.TURNLEAF_LEGACY_WEBVIEW === '1';
 
 function kavitaDevProxy(): Plugin {
   const allowedOrigins = parseAllowedOrigins();
@@ -68,12 +71,13 @@ function kavitaDevProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [tailwindcss(), svelte(), kavitaDevProxy()],
+  plugins: [tailwindcss(), svelte(), kavitaDevProxy(), legacyWebview && legacyWebviewCss()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __LEGACY_WEBVIEW__: JSON.stringify(legacyWebview),
   },
   build: {
-    target: 'es2022',
+    target: legacyWebview ? LEGACY_WEBVIEW_TARGET : 'es2022',
     sourcemap: false,
   },
   test: {

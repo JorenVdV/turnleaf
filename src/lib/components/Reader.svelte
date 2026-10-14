@@ -1555,6 +1555,21 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* These are invisible hit areas over the page. Onyx firmware injects
+     `button { background: #fff !important }` into every WebView, which would paint them over the text. */
+  .tap-zones button,
+  .reader-top-reveal,
+  .reader-bottom-reveal {
+    background: transparent !important;
+  }
+
+  /* Older WebViews (Chrome < 90) ring every tapped button; keep the ring for keyboard focus only. */
+  .tap-zones button:focus:not(:focus-visible),
+  .reader-top-reveal:focus:not(:focus-visible),
+  .reader-bottom-reveal:focus:not(:focus-visible) {
+    outline: none;
+  }
+
   .reader-overlay {
     z-index: 20;
   }

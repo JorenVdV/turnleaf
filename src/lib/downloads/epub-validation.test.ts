@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import {
   EpubValidationError,
@@ -12,6 +13,7 @@ interface ZipTestEntry {
   data?: Uint8Array;
   declaredSize?: number;
   flags?: number;
+  method?: number;
 }
 
 function write16(bytes: Uint8Array, offset: number, value: number): void {
@@ -30,6 +32,7 @@ function makeZip(entries: ZipTestEntry[]): Uint8Array {
     data: entry.data ?? new Uint8Array(),
     declaredSize: entry.declaredSize ?? entry.data?.length ?? 0,
     flags: entry.flags ?? 0,
+    method: entry.method ?? 0,
   }));
   const localSize = normalized.reduce(
     (total, entry) => total + 30 + entry.name.length + entry.data.length,
@@ -44,6 +47,7 @@ function makeZip(entries: ZipTestEntry[]): Uint8Array {
     write32(archive, offset, 0x04034b50);
     write16(archive, offset + 4, 20);
     write16(archive, offset + 6, entry.flags);
+    write16(archive, offset + 8, entry.method);
     write16(archive, offset + 26, entry.name.length);
     offset += 30;
     archive.set(entry.name, offset);
@@ -57,6 +61,7 @@ function makeZip(entries: ZipTestEntry[]): Uint8Array {
     write16(archive, offset + 4, 20);
     write16(archive, offset + 6, 20);
     write16(archive, offset + 8, entry.flags);
+    write16(archive, offset + 10, entry.method);
     write16(archive, offset + 28, entry.name.length);
     write32(archive, offset + 20, entry.data.length);
     write32(archive, offset + 24, entry.declaredSize);
@@ -145,6 +150,39 @@ describe('EPUB container validation', () => {
     await expectInvalid(
       makeZip([{ name: 'mimetype', data: new TextEncoder().encode('application/epub+zip') }]),
     );
+  });
+
+  it('accepts a deflated container on WebViews whose DecompressionStream lacks deflate-raw', async () => {
+    const xml = new TextEncoder().encode(
+      '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+    );
+    const archive = makeZip([
+      { name: 'mimetype', data: new TextEncoder().encode('application/epub+zip') },
+      {
+        name: 'META-INF/container.xml',
+        data: new Uint8Array(deflateRawSync(xml)),
+        declaredSize: xml.length,
+        method: 8,
+      },
+    ]);
+    // Chrome 80-102: the constructor exists but only knows 'gzip' and 'deflate'.
+    vi.stubGlobal(
+      'DecompressionStream',
+      class {
+        constructor(format: string) {
+          if (format !== 'gzip' && format !== 'deflate') throw new TypeError('Unsupported format');
+        }
+      },
+    );
+    try {
+      await expect(
+        validateEpubArchive(archive.length, async (offset, length) =>
+          archive.slice(offset, offset + length),
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('rejects malformed container XML even when the ZIP structure is intact', async () => {

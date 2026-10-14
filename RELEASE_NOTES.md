@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- feat: publish separate normal and legacy WebView APKs with each release
+- feat: make the e-ink theme pure black and white without shading
+- feat: add a legacy WebView build for devices stuck on Chrome 86
+- fix: keep reader tap zones transparent under injected WebView styles
+- fix: download covers and EPUBs on Android 7-10 and Chrome 80-102 WebViews
 - fix: remove blank pages at the end of chapters whose text reflows narrower after loading, such as when an embedded font finishes loading
 - fix: land on the last page of the previous chapter when paging back, even while the chapter is still reflowing
 - fix: show the last page of each chapter on devices with fractional pixel ratios

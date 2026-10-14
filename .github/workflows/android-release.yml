@@ -101,18 +101,43 @@ jobs:
       - name: Build signed release APK
         run: npm run android:release
 
-      - name: Stage release artifacts and notes
+      - name: Stage release APK
         run: |
           set -eu
           mkdir -p release-payload
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+          cp "$APK" release-payload/app-release.apk
+
+      # Same app id and signing key as the release APK, so either one updates the other. The
+      # asset names are what src/lib/github/releases.ts offers each variant in its update banner.
+      - name: Build signed legacy WebView APK
+        env:
+          TURNLEAF_LEGACY_WEBVIEW: '1'
+        run: npm run android:release
+
+      - name: Stage legacy WebView APK
+        run: |
+          set -eu
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          if unzip -p "$APK" 'assets/public/assets/*.css' | grep -q '@layer'; then
+            echo "Legacy WebView APK still contains cascade layers" >&2
+            exit 1
+          fi
+          cp "$APK" release-payload/app-release-legacy-webview.apk
+
+      - name: Stage release notes
+        run: |
+          set -eu
           npm run --silent release:notes > "$RUNNER_TEMP/turnleaf-release-notes.md"
           {
             cat "$RUNNER_TEMP/turnleaf-release-notes.md"
-            printf '\n\nTested revision: `%s`\n' "$GITHUB_SHA"
+            printf '\n\n## Downloads\n\n'
+            printf -- '- `app-release.apk`: Android 7 or newer with an up-to-date Android System WebView.\n'
+            printf -- '- `app-release-legacy-webview.apk`: devices whose WebView cannot be updated past Chrome 86, such as Onyx Boox on Android 9.\n'
+            printf '\nTested revision: `%s`\n' "$GITHUB_SHA"
           } > release-payload/turnleaf-release-notes.md
-          cp "$APK" release-payload/app-release.apk
           printf '%s\n' "$GITHUB_SHA" > release-payload/tested-revision.txt
 
       - name: Upload release artifacts
@@ -143,6 +168,11 @@ jobs:
           test "$(cat release-payload/tested-revision.txt)" = "$TESTED_REVISION"
           grep -Fq "Tested revision: \`$TESTED_REVISION\`" release-payload/turnleaf-release-notes.md
           test -s release-payload/app-release.apk
+          test -s release-payload/app-release-legacy-webview.apk
+          if cmp -s release-payload/app-release.apk release-payload/app-release-legacy-webview.apk; then
+            echo "Release and legacy WebView APKs are identical" >&2
+            exit 1
+          fi
           test -s release-payload/turnleaf-release-notes.md
 
       - name: Publish GitHub release
@@ -151,9 +181,14 @@ jobs:
           RELEASE_TAG: ${{ needs.build-release-apk.outputs.release_tag }}
           VERSION_BASE: ${{ needs.build-release-apk.outputs.version_base }}
           TESTED_REVISION: ${{ needs.build-release-apk.outputs.tested_revision }}
+        # The legacy APK goes up second: builds before the per-variant update check offer the
+        # first .apk asset they find, and must keep getting the normal one.
         run: |
+          set -eu
           gh release create "$RELEASE_TAG" "release-payload/app-release.apk" \
             --title "Turnleaf $VERSION_BASE" \
             --notes-file "release-payload/turnleaf-release-notes.md" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TESTED_REVISION"
+          gh release upload "$RELEASE_TAG" "release-payload/app-release-legacy-webview.apk" \
+            --repo "$GITHUB_REPOSITORY"

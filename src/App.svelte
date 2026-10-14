@@ -5,7 +5,12 @@
   import Onboarding from './lib/components/Onboarding.svelte';
   import Library from './lib/components/Library.svelte';
   import TurnleafLogo from './lib/components/TurnleafLogo.svelte';
-  import { fetchLatestGithubRelease, type ReleaseBanner } from './lib/github/releases';
+  import {
+    fetchLatestGithubRelease,
+    LEGACY_WEBVIEW_APK_ASSET,
+    RELEASE_APK_ASSET,
+    type ReleaseBanner,
+  } from './lib/github/releases';
   import {
     getPreference,
     getServer,
@@ -71,7 +76,11 @@
   }
 
   async function checkForRelease(): Promise<void> {
-    const latest = await fetchLatestGithubRelease(__APP_VERSION__);
+    // A legacy WebView install must only be offered the legacy APK, and the reverse.
+    const latest = await fetchLatestGithubRelease(
+      __APP_VERSION__,
+      __LEGACY_WEBVIEW__ ? LEGACY_WEBVIEW_APK_ASSET : RELEASE_APK_ASSET,
+    );
     if (latest) releaseBanner = latest;
   }
 

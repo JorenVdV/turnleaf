@@ -39,6 +39,17 @@ jobs:
       - name: Build Android debug APK
         run: npm run android:debug
 
+      - name: Build legacy WebView bundle
+        env:
+          TURNLEAF_LEGACY_WEBVIEW: '1'
+        run: |
+          set -eu
+          npx vite build
+          if grep -l '@layer' dist/assets/*.css; then
+            echo "Legacy WebView CSS still contains cascade layers" >&2
+            exit 1
+          fi
+
   android-emulator-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25

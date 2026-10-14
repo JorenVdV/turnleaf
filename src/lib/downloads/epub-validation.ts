@@ -256,6 +256,16 @@ async function readBoundedStream(stream: ReadableStream<Uint8Array>): Promise<Ui
   return bytes;
 }
 
+function supportsDeflateRaw(): boolean {
+  if (typeof DecompressionStream === 'undefined') return false;
+  try {
+    new DecompressionStream('deflate-raw');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function validateContainerEntry(
   entry: EpubArchiveEntry,
   archiveOffset: number,
@@ -290,7 +300,7 @@ async function validateContainerEntry(
   const compressed = await readRange(dataOffset, entry.compressedSize);
   requireRange(compressed, entry.compressedSize, 'The EPUB container entry is truncated.');
   let uncompressed = compressed;
-  if (entry.compressionMethod === 8 && typeof DecompressionStream !== 'undefined') {
+  if (entry.compressionMethod === 8 && supportsDeflateRaw()) {
     try {
       const stream = new Blob([new Uint8Array(compressed).buffer as ArrayBuffer])
         .stream()
@@ -302,7 +312,8 @@ async function validateContainerEntry(
       throw new EpubValidationError('The EPUB container entry is malformed.');
     }
   } else if (entry.compressionMethod === 8) {
-    // Older WebViews may not expose DecompressionStream. The central directory
+    // Older WebViews may not expose DecompressionStream, or (Chrome 80-102) expose it without the
+    // 'deflate-raw' format ZIP entries need. The central directory
     // and bounds checks still protect the file, and EPUB.js will inflate it on
     // open; do not reject otherwise valid illustrated EPUBs solely for that API.
     return;
