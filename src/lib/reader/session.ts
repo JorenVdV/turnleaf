@@ -99,6 +99,17 @@ export function kavitaXPathToCfi(xpath: string, cfiBase: string): string | null 
 }
 
 /**
+ * Maps Kavita's page-based percentage to a spine section. Kavita counts an EPUB's spine
+ * sections as pages, so this needs no epub.js locations, which load every section first
+ * and take minutes on omnibus EPUBs with hundreds of sections.
+ */
+export function percentageToSpineIndex(percentage: number, sectionCount: number): number {
+  if (sectionCount <= 0 || !Number.isFinite(percentage)) return 0;
+  const index = Math.floor(Math.max(0, percentage) * sectionCount + 1e-6);
+  return Math.min(sectionCount - 1, index);
+}
+
+/**
  * Returns the scroll offset of the neighbouring page, or null at a section edge.
  * WebViews with a fractional devicePixelRatio round scrollLeft to device pixels, so
  * pages are snapped to whole multiples of the page width instead of compared exactly.
@@ -743,9 +754,11 @@ export class ReaderSession {
 
   private async displayPercentage(percentage: number): Promise<boolean> {
     if (!this.rendition) return false;
+    const sections = this.spineSections();
+    const section = sections[percentageToSpineIndex(percentage, sections.length)];
+    if (!section) return false;
     try {
-      if (!this.book.locations.length()) await this.book.locations.generate(1600);
-      await this.rendition.display(Math.max(0, Math.min(0.999, percentage)));
+      await this.rendition.display(section.href);
       return true;
     } catch {
       return false;
