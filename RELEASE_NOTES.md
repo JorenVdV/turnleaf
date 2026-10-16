@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix: set up the Android SDK on Gitea with setup-android v4
 - feat: check Gitea releases for updates and publish APKs from Gitea Actions
 - fix: keep a dismissed update banner hidden until a newer release
 - fix: publish the legacy APK under a name that sorts last and offer this repo's releases
