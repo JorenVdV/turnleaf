@@ -6,7 +6,7 @@
   import Library from './lib/components/Library.svelte';
   import TurnleafLogo from './lib/components/TurnleafLogo.svelte';
   import {
-    fetchLatestGithubRelease,
+    fetchLatestRelease,
     LEGACY_WEBVIEW_APK_ASSET,
     RELEASE_APK_ASSET,
     type ReleaseBanner,
@@ -79,7 +79,7 @@
 
   async function checkForRelease(): Promise<void> {
     // A legacy WebView install must only be offered the legacy APK, and the reverse.
-    const latest = await fetchLatestGithubRelease(
+    const latest = await fetchLatestRelease(
       __APP_VERSION__,
       __LEGACY_WEBVIEW__ ? LEGACY_WEBVIEW_APK_ASSET : RELEASE_APK_ASSET,
     );
@@ -128,7 +128,7 @@
                 ? ` · ${releaseBanner.title}`
                 : ''}
             </p>
-            <p class="text-sm text-surface-700-300">A newer GitHub release was found at startup.</p>
+            <p class="text-sm text-surface-700-300">A newer release was found at startup.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             {#if releaseBanner.downloadUrl}

@@ -91,3 +91,22 @@ signing key:
 | `turnleaf-legacy-webview.apk` | WebViews stuck at Chrome 86 or older          |
 
 Either APK installs over the other. Each build's update banner offers only its own variant.
+
+## Release channel
+
+The update banner checks the repository in `TURNLEAF_RELEASE_REPOSITORY` at build time, by default
+`https://github.com/JorenVdV/turnleaf`. A `github.com` repository uses GitHub's API; any other
+HTTPS host is treated as a Gitea server (`/api/v1/repos/<owner>/<repo>/releases/latest`). The
+banner builds its release and download links from that repository URL, not from the API response.
+
+Two workflows publish releases:
+
+| Workflow                                | Publishes to                                       | Build numbers |
+| --------------------------------------- | -------------------------------------------------- | ------------- |
+| `.github/workflows/android-release.yml` | GitHub, banner checks GitHub                       | below 2000    |
+| `.gitea/workflows/android-release.yml`  | `gitea.home.jorenvdv.eu`, banner checks that Gitea | 2000 + run    |
+
+Both sign with the same key, so a Gitea build installs over a GitHub one. Gitea builds start at
+build number 2000, so they also count as newer than every GitHub build. To move installed devices
+over, publish one GitHub release with `TURNLEAF_RELEASE_REPOSITORY` set to the Gitea repository.
+Gitea's workflow needs the same four `ANDROID_*` signing secrets as GitHub's.
