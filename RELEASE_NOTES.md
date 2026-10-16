@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix: install the Android SDK platform and build-tools on the Gitea runner
 - fix: set up the Android SDK on Gitea with setup-android v4
 - feat: check Gitea releases for updates and publish APKs from Gitea Actions
 - fix: keep a dismissed update banner hidden until a newer release
