@@ -23,6 +23,9 @@ const packageJson = JSON.parse(
 const appVersion = process.env.TURNLEAF_VERSION_NAME ?? packageJson.version;
 // Builds for WebViews that cannot be updated (e.g. Onyx's Android 9 firmware, WebView 86).
 const legacyWebview = process.env.TURNLEAF_LEGACY_WEBVIEW === '1';
+// The repository the update banner checks for releases: a github.com or Gitea repository page.
+const releaseRepository =
+  process.env.TURNLEAF_RELEASE_REPOSITORY || 'https://github.com/JorenVdV/turnleaf';
 
 function kavitaDevProxy(): Plugin {
   const allowedOrigins = parseAllowedOrigins();
@@ -75,6 +78,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __LEGACY_WEBVIEW__: JSON.stringify(legacyWebview),
+    __RELEASE_REPOSITORY__: JSON.stringify(releaseRepository),
   },
   build: {
     target: legacyWebview ? LEGACY_WEBVIEW_TARGET : 'es2022',

@@ -1,16 +1,11 @@
-type GithubReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-};
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
-type GithubRelease = {
-  html_url: string;
+// The part of a release that GitHub's and Gitea's latest-release endpoints both return.
+type Release = {
   name: string | null;
   tag_name: string;
   published_at: string | null;
-  assets: GithubReleaseAsset[];
-  draft: boolean;
-  prerelease: boolean;
+  assets: { name: string }[];
 };
 
 export type ReleaseBanner = {
@@ -27,10 +22,52 @@ export type ReleaseBanner = {
 export const RELEASE_APK_ASSET = 'app-release.apk';
 export const LEGACY_WEBVIEW_APK_ASSET = 'turnleaf-legacy-webview.apk';
 
-// The repository whose releases the update banner offers; android-release.yml publishes there.
-const githubRepository = 'JorenVdV/turnleaf';
-const githubReleasesUrl = `https://api.github.com/repos/${githubRepository}/releases/latest`;
-const githubRepositoryPath = `/${githubRepository}`;
+export type ReleaseRepository = {
+  pageUrl: string;
+  latestReleaseApiUrl: string;
+};
+
+// The repository whose releases the update banner offers, set per build through
+// TURNLEAF_RELEASE_REPOSITORY. A github.com repository uses GitHub's API; any other host is
+// treated as a Gitea server.
+export function parseReleaseRepository(raw: string): ReleaseRepository | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+    return null;
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length < 2 || !segments.every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))) {
+    return null;
+  }
+  const pageUrl = `${url.origin}/${segments.join('/')}`;
+  const repository = segments.slice(-2).join('/');
+
+  if (url.hostname.toLowerCase() === 'github.com') {
+    if (segments.length !== 2) return null;
+    return {
+      pageUrl,
+      latestReleaseApiUrl: `https://api.github.com/repos/${repository}/releases/latest`,
+    };
+  }
+
+  // Gitea may be served from a sub-path, which then prefixes its API too.
+  const prefix = segments
+    .slice(0, -2)
+    .map((segment) => `/${segment}`)
+    .join('');
+  return {
+    pageUrl,
+    latestReleaseApiUrl: `${url.origin}${prefix}/api/v1/repos/${repository}/releases/latest`,
+  };
+}
+
+const releaseRepository = parseReleaseRepository(__RELEASE_REPOSITORY__);
 
 type ParsedVersion = {
   major: number;
@@ -94,105 +131,80 @@ export function compareVersions(left: string, right: string): number {
 
   const prerelease = compareSegments(aPre, bPre);
   if (prerelease !== 0) return prerelease;
-  // Turnleaf APK releases use build metadata to distinguish successive GitHub builds.
+  // Turnleaf APK releases use build metadata to distinguish successive release builds.
   return compareSegments(a.build, b.build);
 }
 
-function isTrustedGithubUrl(rawUrl: string, expectedPath: string): boolean {
-  try {
-    const url = new URL(rawUrl);
-    if (
-      url.protocol !== 'https:' ||
-      url.hostname.toLowerCase() !== 'github.com' ||
-      url.port ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    ) {
-      return false;
-    }
-
-    return decodeURIComponent(url.pathname) === expectedPath;
-  } catch {
-    return false;
-  }
-}
-
-function isSafeAssetName(name: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*\.apk$/i.test(name);
-}
-
-function pickDownloadUrl(
-  release: GithubRelease,
-  tagName: string,
-  apkAssetName: string,
-): string | null {
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  const apkAsset = assets.find((asset) => {
-    if (
-      !asset ||
-      typeof asset !== 'object' ||
-      typeof asset.name !== 'string' ||
-      typeof asset.browser_download_url !== 'string'
-    ) {
-      return false;
-    }
-    if (!isSafeAssetName(asset.name) || asset.name !== apkAssetName) return false;
-
-    return isTrustedGithubUrl(
-      asset.browser_download_url,
-      `${githubRepositoryPath}/releases/download/${tagName}/${asset.name}`,
-    );
-  });
-  return apkAsset?.browser_download_url ?? null;
-}
-
 function buildBanner(
-  release: GithubRelease,
+  release: Release,
   currentVersion: string,
   apkAssetName: string,
+  repository: ReleaseRepository,
 ): ReleaseBanner | null {
-  if (typeof release.tag_name !== 'string' || typeof release.html_url !== 'string') return null;
+  if (!release || typeof release.tag_name !== 'string') return null;
 
   const tagName = release.tag_name.trim();
   const latestVersion = tagName.replace(/^v/i, '');
   if (!parseVersion(latestVersion)) return null;
   if (compareVersions(latestVersion, currentVersion) <= 0) return null;
-  if (!isTrustedGithubUrl(release.html_url, `${githubRepositoryPath}/releases/tag/${tagName}`)) {
-    return null;
-  }
+
+  // Links are built from the configured repository instead of taken from the response: Gitea
+  // reports them under its ROOT_URL, which can be a LAN address a device cannot open.
+  const tagPath = encodeURIComponent(tagName);
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const hasApk = assets.some(
+    (asset) => asset && typeof asset === 'object' && asset.name === apkAssetName,
+  );
 
   return {
     version: latestVersion,
-    releaseUrl: release.html_url,
-    downloadUrl: pickDownloadUrl(release, tagName, apkAssetName),
+    releaseUrl: `${repository.pageUrl}/releases/tag/${tagPath}`,
+    downloadUrl: hasApk
+      ? `${repository.pageUrl}/releases/download/${tagPath}/${apkAssetName}`
+      : null,
     publishedAt: release.published_at,
     title: release.name,
   };
 }
 
-export async function fetchLatestGithubRelease(
-  currentVersion: string,
-  apkAssetName = RELEASE_APK_ASSET,
-  timeoutMs = 4500,
-): Promise<ReleaseBanner | null> {
+async function requestJson(url: string, timeoutMs: number): Promise<unknown> {
+  const headers = { Accept: 'application/json' };
+
+  // Gitea sends no CORS headers, so native builds make the request outside the WebView.
+  if (Capacitor.isNativePlatform()) {
+    const response = await CapacitorHttp.get({
+      url,
+      headers,
+      responseType: 'json',
+      connectTimeout: timeoutMs,
+      readTimeout: timeoutMs,
+    });
+    if (response.status < 200 || response.status >= 300) return null;
+    return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(githubReleasesUrl, {
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
+    const response = await fetch(url, { signal: controller.signal, headers });
     if (!response.ok) return null;
-    const release = (await response.json()) as GithubRelease;
-    return buildBanner(release, currentVersion, apkAssetName);
-  } catch {
-    return null;
+    return await response.json();
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function fetchLatestRelease(
+  currentVersion: string,
+  apkAssetName = RELEASE_APK_ASSET,
+  repository = releaseRepository,
+  timeoutMs = 4500,
+): Promise<ReleaseBanner | null> {
+  if (!repository) return null;
+  try {
+    const release = (await requestJson(repository.latestReleaseApiUrl, timeoutMs)) as Release;
+    return buildBanner(release, currentVersion, apkAssetName, repository);
+  } catch {
+    return null;
   }
 }

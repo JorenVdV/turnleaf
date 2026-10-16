@@ -1,0 +1,165 @@
+# Gitea Actions counterpart of .github/workflows/android-release.yml. Gitea runs only this
+# directory when it exists, and GitHub ignores it. One job, because artifact passing between
+# jobs depends on the Gitea version.
+name: Android APK Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  # What the update banner in these builds checks. Gitea's ROOT_URL is a LAN address, so this is
+  # set explicitly instead of derived from github.server_url.
+  TURNLEAF_RELEASE_REPOSITORY: https://gitea.home.jorenvdv.eu/JorenVdV/turnleaf
+
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install tools
+        run: |
+          set -eu
+          if ! command -v unzip >/dev/null || ! command -v jq >/dev/null; then
+            apt-get update -qq
+            apt-get install -y -qq unzip jq
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Derive release version
+        run: |
+          set -eu
+          BASE_VERSION="$(node -p "require('./package.json').version")"
+          # Builds published on GitHub keep their build numbers and versionCodes below 2000. Start
+          # above them, so Android installs these builds over GitHub's and the update banner
+          # treats them as newer.
+          BUILD_NUMBER=$((2000 + GITHUB_RUN_NUMBER))
+          RELEASE_VERSION="${BASE_VERSION}+${BUILD_NUMBER}"
+          echo "TURNLEAF_VERSION_BASE=${BASE_VERSION}" >> "$GITHUB_ENV"
+          echo "TURNLEAF_VERSION_NAME=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          echo "TURNLEAF_VERSION_CODE=${BUILD_NUMBER}" >> "$GITHUB_ENV"
+          echo "TURNLEAF_RELEASE_TAG=v${RELEASE_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Finalize release notes
+        run: npm run release:finalize
+
+      - name: Run release quality gates
+        run: |
+          npm run verify
+          npm run android:debug
+
+      - name: Restore signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              echo "Missing $name secret" >&2
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/turnleaf-release.jks
+          cat > android/keystore.properties <<EOF
+          TURNLEAF_STORE_FILE=turnleaf-release.jks
+          TURNLEAF_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+          TURNLEAF_KEY_ALIAS=$ANDROID_KEY_ALIAS
+          TURNLEAF_KEY_PASSWORD=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Build signed release APK
+        run: npm run android:release
+
+      - name: Stage release APK
+        run: |
+          set -eu
+          mkdir -p release-payload
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          cp "$APK" release-payload/app-release.apk
+
+      # Same app id and signing key as the release APK, so either one updates the other. The
+      # asset names are what src/lib/github/releases.ts offers each variant in its update banner.
+      - name: Build signed legacy WebView APK
+        env:
+          TURNLEAF_LEGACY_WEBVIEW: '1'
+        run: npm run android:release
+
+      - name: Stage legacy WebView APK
+        run: |
+          set -eu
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          if unzip -p "$APK" 'assets/public/assets/*.css' | grep -q '@layer'; then
+            echo "Legacy WebView APK still contains cascade layers" >&2
+            exit 1
+          fi
+          cp "$APK" release-payload/turnleaf-legacy-webview.apk
+          if cmp -s release-payload/app-release.apk release-payload/turnleaf-legacy-webview.apk; then
+            echo "Release and legacy WebView APKs are identical" >&2
+            exit 1
+          fi
+
+      - name: Stage release notes
+        run: |
+          set -eu
+          {
+            npm run --silent release:notes
+            printf '\n\n## Downloads\n\n'
+            printf -- '- `app-release.apk`: Android 7 or newer with an up-to-date Android System WebView.\n'
+            printf -- '- `turnleaf-legacy-webview.apk`: devices whose WebView cannot be updated past Chrome 86, such as Onyx Boox on Android 9.\n'
+            printf '\nTested revision: `%s`\n' "$GITHUB_SHA"
+          } > release-payload/turnleaf-release-notes.md
+
+      - name: Publish Gitea release
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          set -eu
+          RELEASE_JSON="$(jq -n \
+            --arg tag "$TURNLEAF_RELEASE_TAG" \
+            --arg target "$GITHUB_SHA" \
+            --arg name "Turnleaf $TURNLEAF_VERSION_BASE" \
+            --rawfile body release-payload/turnleaf-release-notes.md \
+            '{tag_name: $tag, target_commitish: $target, name: $name, body: $body}')"
+          RELEASE_ID="$(curl -fsS -H "Authorization: token ${GITEA_TOKEN}" \
+            -H "Content-Type: application/json" -d "$RELEASE_JSON" \
+            "${API}/releases" | jq -r '.id')"
+          test -n "$RELEASE_ID" && test "$RELEASE_ID" != null
+          # Upload the normal APK first, so it stays first for builds that offer the first .apk.
+          for asset in app-release.apk turnleaf-legacy-webview.apk; do
+            curl -fsS -o /dev/null -H "Authorization: token ${GITEA_TOKEN}" \
+              -F "attachment=@release-payload/${asset}" \
+              "${API}/releases/${RELEASE_ID}/assets?name=${asset}"
+          done
