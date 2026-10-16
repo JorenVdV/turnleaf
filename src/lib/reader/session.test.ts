@@ -5,6 +5,7 @@ import {
   lastPageOffset,
   pageTurnOffset,
   parseKavitaXPath,
+  percentageToSpineIndex,
   remeasureAfterLateReflow,
   resolveContentXPath,
   SnappedPageViewManager,
@@ -56,6 +57,20 @@ describe('Kavita EPUB locations', () => {
     expect(kavitaXPathToCfi('//body/DocFragment[9]/body/section[1]/p[165]/span[1]', '/6/18')).toBe(
       'epubcfi(/6/18!/4/2/330/2,/1:0,/1:1)',
     );
+  });
+});
+
+describe('Kavita percentage restore', () => {
+  it('maps a Kavita page percentage to the matching spine section', () => {
+    expect(percentageToSpineIndex(6 / 843, 843)).toBe(6);
+    expect(percentageToSpineIndex(0, 843)).toBe(0);
+    expect(percentageToSpineIndex(0.999, 843)).toBe(842);
+  });
+
+  it('clamps out-of-range and invalid percentages to the spine', () => {
+    expect(percentageToSpineIndex(1.5, 10)).toBe(9);
+    expect(percentageToSpineIndex(-1, 10)).toBe(0);
+    expect(percentageToSpineIndex(Number.NaN, 10)).toBe(0);
   });
 });
 

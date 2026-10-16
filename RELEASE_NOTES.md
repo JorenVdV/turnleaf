@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix: open books at Kavita's saved chapter without first indexing the whole EPUB, which left omnibus EPUBs on a blank screen
 - fix: install the Android SDK platform and build-tools on the Gitea runner
 - fix: set up the Android SDK on Gitea with setup-android v4
 - feat: check Gitea releases for updates and publish APKs from Gitea Actions
